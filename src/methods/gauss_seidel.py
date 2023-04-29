@@ -6,7 +6,11 @@
 #                   method for solving linear systems
 
 import numpy as np
-from multiprocessing import Pool
+import time
+import multiprocessing
+import json
+
+import warnings
 
 def gauss_seidel_serial(A, b, x0, tol, max_iterations):
     n = len(b)
@@ -16,54 +20,112 @@ def gauss_seidel_serial(A, b, x0, tol, max_iterations):
         x_prev = np.copy(x)
 
         for i in range(n):
-            x[i] = (b[i] - np.dot(A[i, :i], x[:i]) - np.dot(A[i, i+1:], x_prev[i+1:])) / A[i, i]
-
+            if np.isclose(A[i, i], 0.0):
+                x[i] = 0.0  # Handle division by zero case
+            else:
+                x[i] = (b[i] - np.dot(A[i, :i], x[:i]) - np.dot(A[i, i+1:], x_prev[i+1:])) / A[i, i]
         if np.linalg.norm(x - x_prev) < tol:
             break
 
     return x
 
-def gauss_seidel_parallel(A, b, x0, tol, max_iterations, num_processes):
-    n = len(b)
-    x = np.copy(x0)
+def gauss_seidel_parallel(A, b, x, tol, num_iterations, num_processes):
+    n = len(x)
+    pool = multiprocessing.Pool(processes=num_processes)
 
-    def update_equation(i):
-        x_new = (b[i] - np.dot(A[i, :i], x[:i]) - np.dot(A[i, i+1:], x[i+1:])) / A[i, i]
-        return i, x_new
-
-    for iteration in range(max_iterations):
-        x_prev = np.copy(x)
-
-        with Pool(processes=num_processes) as pool:
-            results = pool.map(update_equation, range(n))
-
-        for i, x_new in results:
-            x[i] = x_new
-
-        if np.linalg.norm(x - x_prev) < tol:
+    for j in range(num_iterations):
+        x_new = pool.starmap(update, [(A, b, x, i) for i in range(n)])
+        x_old = np.copy(x)
+        x = np.array(x_new)
+        
+        if np.linalg.norm(x - x_old) < tol:
             break
+        
+    pool.close()
+    pool.join()
 
     return x
+
+def update(A, b, x, i):
+    n = len(x)
+    sum1 = np.dot(A[i, :i], x[:i])
+    sum2 = np.dot(A[i, i + 1:], x[i + 1:])
+    x_new = (b[i] - sum1 - sum2) / A[i, i]
+    return x_new
+    
+
+def deserialize_linear_systems(file_path):
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+        linear_systems = []
+        
+        for linear_system in data:
+            dimension = linear_system['dimension']
+            coefficient_matrix = np.array(linear_system['coefficient_matrix'])
+            solution_vector = np.array(linear_system['solution_vector'])
+            deserialized_system = {
+                'dimension': dimension,
+                'coefficient_matrix': coefficient_matrix,
+                'solution_vector': solution_vector
+            }
+            linear_systems.append(deserialized_system)
+        
+        return linear_systems
 
 def main():
-    A = np.array([[4, -1, 0], [-1, 4, -1], [0, -1, 4]])
-    b = np.array([5, 5, 10])
-    
-    # Create an initial guess
-    x0 = np.zeros_like(b)
-    
-    # Set the tolerance and max number of iterations
-    tolerance = 1e-6
-    max_iterations = 1000
+    warnings.filterwarnings('ignore')
 
-    # Use the serial method
-    solution = gauss_seidel_serial(A, b, x0, tolerance, max_iterations)
-    print(solution)
+    # JSON file path
+    file_path = 'sparse_linear_systems.json'
     
-    # Use the parallel method
-    num_processes = 4
-    solution = gauss_seidel_parallel(A, b, x0, tolerance, max_iterations, num_processes)
-    print(solution)
+    # Stop after 1000 for regular linear systems
+
+    deserialized_systems = deserialize_linear_systems(file_path)
+    with open("gauss_seidel.csv", 'w') as csv_file:
+        csv_file.write("dimension, Serial GE PP Time, Parallel GE PP Time\n");
+        for i in range(2):
+            # Accessing the deserialized linear systems
+            for system in deserialized_systems:
+                dimension = system['dimension']
+                coefficient_matrix = system['coefficient_matrix']
+                solution_vector = system['solution_vector']
+                
+                A = coefficient_matrix
+                b = solution_vector
+                
+                # Create an initial guess
+                x0 = np.zeros_like(b)
+                
+                # Set the tolerance and max number of iterations
+                tolerance = 1e-6
+                max_iterations = 1000
+                
+                print("For n = " + str(dimension) + ":")
+                
+                # Use the serial method 
+                start_time = time.time();
+                x = gauss_seidel_serial(A, b, x0, tolerance, max_iterations)
+                
+                end_time = time.time();
+                serial_time_elapsed = end_time - start_time;
+                
+                print("\tSerial Time Elapsed: " + str(serial_time_elapsed) + " s")
+                
+                if dimension < 750:
+                    # Use the parallel method
+                    num_processes = 2  # Set the number of parallel processes
+                    start_time = time.time()
+                    x = gauss_seidel_parallel(A, b, x0, tolerance, max_iterations, num_processes)
+                    end_time = time.time();
+                    parallel_time_elapsed = end_time - start_time;
+                
+                    print("\tParallel Time Elapsed: " + str(parallel_time_elapsed) + " s")
+                    csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(parallel_time_elapsed) + "\n")
+                else:
+                    print("\tParallel Time Elapsed: N/A")
+                    csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(0) + "\n")
+                        
+        csv_file.close()
     
 if __name__ == "__main__":
     main()

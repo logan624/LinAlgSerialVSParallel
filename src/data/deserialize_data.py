@@ -1,30 +1,36 @@
-import numpy as np
 import json
+import numpy as np
 
-def deserialize_linear_system(filename):
-    with open("array_data.json", "r") as file:
-        serialized_data = file.read()
-
-    # Deserialize JSON data
-    data = json.loads(serialized_data)
-
-    # Retrieve dimension, coefficient matrix, and solution vector
-    dimension = data["dimension"]
-    A_list = data["coefficient_matrix"]
-    b_list = data["solution_vector"]
-
-    # Convert lists back to NumPy arrays
-    A = np.array(A_list)
-    b = np.array(b_list)
-
-    return dimension, A, b
+def deserialize_linear_systems(file_path):
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+        linear_systems = []
+        
+        for linear_system in data:
+            dimension = linear_system['dimension']
+            coefficient_matrix = np.array(linear_system['coefficient_matrix'])
+            solution_vector = np.array(linear_system['solution_vector'])
+            deserialized_system = {
+                'dimension': dimension,
+                'coefficient_matrix': coefficient_matrix,
+                'solution_vector': solution_vector
+            }
+            linear_systems.append(deserialized_system)
+        
+        return linear_systems
 
 # Example usage
-filename = "linear_system_10.json"
-dimension, A, b = deserialize_linear_system(filename)
+file_path = 'linear_systems.json'
+deserialized_systems = deserialize_linear_systems(file_path)
 
-print(f"Dimension: {dimension}")
-print("Coefficient Matrix (A):")
-print(A)
-print("\nSolution Vector (b):")
-print(b)
+# Accessing the deserialized linear systems
+for system in deserialized_systems:
+    dimension = system['dimension']
+    coefficient_matrix = system['coefficient_matrix']
+    solution_vector = system['solution_vector']
+    
+    # Do something with the deserialized linear system
+    print("Dimension:", dimension)
+    print("Coefficient Matrix:", coefficient_matrix)
+    print("Solution Vector:", solution_vector)
+    print()
