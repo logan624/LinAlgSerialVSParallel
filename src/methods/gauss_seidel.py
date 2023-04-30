@@ -9,7 +9,6 @@ import numpy as np
 import time
 import multiprocessing
 import json
-
 import warnings
 
 def gauss_seidel_serial(A, b, x0, tol, max_iterations):
@@ -46,6 +45,7 @@ def gauss_seidel_parallel(A, b, x, tol, num_iterations, num_processes):
 
     return x
 
+# Parallel Gauss-Seidel helper function
 def update(A, b, x, i):
     n = len(x)
     sum1 = np.dot(A[i, :i], x[:i])
@@ -53,7 +53,7 @@ def update(A, b, x, i):
     x_new = (b[i] - sum1 - sum2) / A[i, i]
     return x_new
     
-
+# To deserialize the JSON file
 def deserialize_linear_systems(file_path):
     with open(file_path, 'r') as file:
         data = json.load(file)
@@ -78,11 +78,12 @@ def main():
     # JSON file path
     file_path = 'sparse_linear_systems.json'
     
-    # Stop after 1000 for regular linear systems
-
+    # Deserialize the JSON file
     deserialized_systems = deserialize_linear_systems(file_path)
+    
     with open("gauss_seidel.csv", 'w') as csv_file:
         csv_file.write("dimension, Serial GE PP Time, Parallel GE PP Time\n");
+        # Collect data for two different trials
         for i in range(2):
             # Accessing the deserialized linear systems
             for system in deserialized_systems:
@@ -123,6 +124,8 @@ def main():
                     csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(parallel_time_elapsed) + "\n")
                 else:
                     print("\tParallel Time Elapsed: N/A")
+                    
+                    # Record the data in a CSV file
                     csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(0) + "\n")
                         
         csv_file.close()

@@ -38,19 +38,6 @@ def lu_factorization_solve_serial(A, b):
 
     return x
 
-def update_rows(args):
-    k, L, U = args
-    n = L.shape[0]
-    
-    for i in range(k + 1, n):
-        if U[k, k] != 0:
-            L[i, k] = U[i, k] / U[k, k]
-        else:
-            L[i, k] = 0  # Set a default value of 0
-
-        for j in range(k, n):
-            U[i, j] -= L[i, k] * U[k, j]
-
 def lu_factorization_solve_parallel(A, b, num_processes):
     n = A.shape[0]
     L = np.eye(n)
@@ -67,19 +54,44 @@ def lu_factorization_solve_parallel(A, b, num_processes):
 
     # Solve Ly = b using forward substitution
     y = np.zeros(n)
-    for i in range(n):
-        y[i] = b[i] - np.dot(L[i, :i], y[:i])
+
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        pool.starmap(forward_substitution, [(i, L, y, b) for i in range(n)])
 
     # Solve Ux = y using backward substitution
     x = np.zeros(n)
-    for i in range(n - 1, -1, -1):
-        if U[i, i] != 0:
-            x[i] = (y[i] - np.dot(U[i, i + 1:], x[i + 1:])) / U[i, i]
-        else:
-            x[i] = 0  # Set a default value of 0
+
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        pool.starmap(backward_substitution, [(i, U, y, x) for i in range(n-1, -1, -1)])
 
     return x
 
+# Parallel LU Factorization Helper Function
+def update_rows(args):
+    k, L, U = args
+    n = L.shape[0]
+    
+    for i in range(k + 1, n):
+        if U[k, k] != 0:
+            L[i, k] = U[i, k] / U[k, k]
+        else:
+            L[i, k] = 0  # Set a default value of 0
+
+        for j in range(k, n):
+            U[i, j] -= L[i, k] * U[k, j]
+
+# Parallel LU Factorization Helper Function
+def forward_substitution(i, L, y, b):
+    y[i] = b[i] - np.dot(L[i, :i], y[:i])
+
+# Parallel LU Factorization Helper Function
+def backward_substitution(i, U, y, x):
+    if U[i, i] != 0:
+        x[i] = (y[i] - np.dot(U[i, i + 1:], x[i + 1:])) / U[i, i]
+    else:
+        x[i] = 0  # Set a default value of 0
+
+# To deserialize the JSON file
 def deserialize_linear_systems(file_path):
     with open(file_path, 'r') as file:
         data = json.load(file)
@@ -100,7 +112,7 @@ def deserialize_linear_systems(file_path):
 
 def main():
     # JSON file path
-    file_path = 'linear_systems.json'
+    file_path = 'sparse_linear_systems.json'
 
     deserialized_systems = deserialize_linear_systems(file_path)
     with open("lu_fact.csv", 'w') as csv_file:
@@ -137,6 +149,8 @@ def main():
                     csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(parallel_time_elapsed) + "\n")
                 else:
                     print("\tParallel Time Elapsed: N/A")
+                    
+                    # Record the data in a CSV file
                     csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(0) + "\n")
                                 
         csv_file.close()

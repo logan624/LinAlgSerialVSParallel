@@ -7,40 +7,12 @@
 
 import numpy as np
 import json
-import multiprocessing
 import time
 import scipy.sparse
 import warnings
-from scipy.sparse.linalg import spsolve
 import multiprocessing
 
 def gaussian_elimination_serial(A, b):
-    n = len(b)
-    Ab = np.concatenate((A, np.expand_dims(b, axis=1)), axis=1)
-
-    # Forward elimination
-    for k in range(n-1):
-        # Partial pivoting
-        max_index = np.argmax(np.abs(Ab[k:, k])) + k
-        Ab[[k, max_index]] = Ab[[max_index, k]]
-
-        for i in range(k+1, n):
-            if Ab[k,k] != 0:
-                factor = Ab[i, k] / Ab[k, k]
-            else:
-                factor = 0
-
-    # Back substitution
-    x = np.zeros(n)
-    for i in range(n-1, -1, -1):
-        if Ab[i,i] != 0:
-            x[i] = (Ab[i, -1] - np.dot(Ab[i, i+1:-1], x[i+1:])) / Ab[i, i]
-        else:
-            x[i] = 0
-
-    return x
-
-def gaussian_elimination_sparse(A, b):
     n = len(b)
     Ab = scipy.sparse.hstack((A, scipy.sparse.csc_matrix(np.expand_dims(b, axis=1)))).tocsr()
 
@@ -66,7 +38,21 @@ def gaussian_elimination_sparse(A, b):
 
     return x
 
-def forward_elimination_sparse(Ab, k):
+def gaussian_elimination_parallel(A, b, num_processes):
+    n = len(b)
+    Ab = np.concatenate((A, np.expand_dims(b, axis=1)), axis=1)
+
+    # Forward elimination
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        pool.starmap(forward_elimination, [(Ab, k) for k in range(n - 1)])
+
+    # Solve the system using spsolve
+    x = scipy.sparse.linalg.spsolve(Ab[:, :-1], Ab[:, -1])
+
+    return x
+
+# Parallel Gaussian Elimination Helper Function
+def forward_elimination(Ab, k):
     n = Ab.shape[0]
     max_index = np.argmax(np.abs(Ab[k:, k])) + k
     Ab[[k, max_index]] = Ab[[max_index, k]]
@@ -80,19 +66,7 @@ def forward_elimination_sparse(Ab, k):
         
         Ab[i, k:] -= factor * Ab[k, k:]
 
-def gaussian_elimination_parallel_sparse(A, b, num_processes):
-    n = len(b)
-    Ab = np.concatenate((A, np.expand_dims(b, axis=1)), axis=1)
-
-    # Forward elimination
-    with multiprocessing.Pool(processes=num_processes) as pool:
-        pool.starmap(forward_elimination_sparse, [(Ab, k) for k in range(n - 1)])
-
-    # Solve the system using spsolve
-    x = spsolve(Ab[:, :-1], Ab[:, -1])
-
-    return x
-
+# To deserialize the JSON file
 def deserialize_linear_systems(file_path):
     with open(file_path, 'r') as file:
         data = json.load(file)
@@ -119,6 +93,7 @@ def main():
     deserialized_systems = deserialize_linear_systems(file_path)
     with open("partial_pivot.csv", 'w') as csv_file:
         csv_file.write("dimension, Serial GE PP Time, Parallel GE PP Time\n");
+        # Collect data for two different trials
         for i in range(3):
             # Accessing the deserialized linear systems
             for system in deserialized_systems:
@@ -133,7 +108,7 @@ def main():
                 
                 # Use the serial method 
                 start_time = time.time();
-                x = gaussian_elimination_sparse(A, b)
+                x = gaussian_elimination_serial(A, b)
                 end_time = time.time();
                 serial_time_elapsed = end_time - start_time;
                 
@@ -142,11 +117,13 @@ def main():
                 # Use the parallel method
                 num_processes = multiprocessing.cpu_count()  # Set the number of parallel processes
                 start_time = time.time()
-                x = gaussian_elimination_parallel_sparse(A, b, num_processes)
+                x = gaussian_elimination_parallel(A, b, num_processes)
                 end_time = time.time();
                 parallel_time_elapsed = end_time - start_time;
                 
                 print("\tParallel Time Elapsed: " + str(parallel_time_elapsed) + " s")
+                
+                # Record the data in a CSV file
                 csv_file.write(str(dimension) + "," + str(serial_time_elapsed) + "," + str(parallel_time_elapsed) + "\n")
                         
         csv_file.close()
